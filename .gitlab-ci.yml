@@ -1,0 +1,30 @@
+stages:
+  - lint
+  - deploy_and_test
+  - cleanup
+
+variables:
+  DOCKER_DRIVER: overlay2
+
+chaos_resilience_job:
+  stage: deploy_and_test
+  image: ubuntu:22.04
+  tags:
+    - docker
+  before_script:
+    - apt-get update && apt-get install -y curl python3 python3-pip docker.io sudo iproute2
+    - bash -c "$(curl -sL https://get.containerlab.dev)"
+  script:
+    - sudo containerlab deploy -t topology.clab.yml --reconfigure
+    - sleep 10
+    - python3 scripts/verify_convergence.py
+    - sudo python3 scripts/chaos_runner.py --exp all
+    - python3 scripts/generate_report.py
+  after_script:
+    - sudo containerlab destroy -t topology.clab.yml --cleanup
+  artifacts:
+    when: always
+    paths:
+      - results/telemetry_*.json
+      - reports/chaos_summary_report.md
+    expire_in: 14 days

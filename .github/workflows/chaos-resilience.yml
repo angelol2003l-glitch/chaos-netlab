@@ -1,0 +1,66 @@
+name: Network Chaos & Resilience CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  network-chaos-test:
+    name: Run Network Chaos & SLO Verification
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: 1. Checkout del Repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 3. Instalar Containerlab
+        run: |
+          echo "Instalando la versión más reciente de Containerlab..."
+          bash -c "$(curl -sL https://get.containerlab.dev)"
+          containerlab version
+
+      - name: 4. Desplegar Topología de Red (IaC)
+        run: |
+          echo "Desplegando la topología Spine-Leaf con Containerlab..."
+          sudo containerlab deploy -t topology.clab.yml --reconfigure
+
+      - name: 5. Pre-flight Check: Esperar y Validar Convergencia OSPF/BGP/BFD
+        run: |
+          echo "Esperando 10 segundos para establecimiento completo de adyacencias..."
+          sleep 10
+          python3 scripts/verify_convergence.py
+
+      - name: 6. Ejecutar Suite de Chaos Engineering (EXP-01, EXP-02, EXP-03, EXP-04)
+        run: |
+          echo "Iniciando experimentos de caos con telemetría en paralelo..."
+          sudo python3 scripts/chaos_runner.py --exp all
+
+      - name: 7. Generar Tablero de Métricas y Publicar Resumen
+        if: always()
+        run: |
+          python3 scripts/generate_report.py
+
+      - name: 8. Subir Artefactos de Telemetría (JSON Logs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-chaos-telemetry-logs
+          path: |
+            results/telemetry_*.json
+            reports/chaos_summary_report.md
+          retention-days: 14
+
+      - name: 9. Destruir Laboratorio (Teardown Limpio)
+        if: always()
+        run: |
+          echo "Limpiando contenedores e interfaces virtuales..."
+          sudo containerlab destroy -t topology.clab.yml --cleanup
