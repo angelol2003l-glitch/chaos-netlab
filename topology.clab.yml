@@ -1,0 +1,55 @@
+name: chaos-netlab
+
+topology:
+  kinds:
+    linux:
+      image: frrouting/frr:latest
+
+  nodes:
+    spine01:
+      kind: linux
+      binds:
+        - configs/spine01/frr.conf:/etc/frr/frr.conf
+        - configs/spine01/daemons:/etc/frr/daemons
+    spine02:
+      kind: linux
+      binds:
+        - configs/spine02/frr.conf:/etc/frr/frr.conf
+        - configs/spine02/daemons:/etc/frr/daemons
+    leaf01:
+      kind: linux
+      binds:
+        - configs/leaf01/frr.conf:/etc/frr/frr.conf
+        - configs/leaf01/daemons:/etc/frr/daemons
+    leaf02:
+      kind: linux
+      binds:
+        - configs/leaf02/frr.conf:/etc/frr/frr.conf
+        - configs/leaf02/daemons:/etc/frr/daemons
+    client-a:
+      kind: linux
+      image: alpine:3.19
+      cmd: "sleep infinity"
+      exec:
+        - ip addr add 192.168.10.10/24 dev eth1
+        - ip route replace default via 192.168.10.1
+    client-b:
+      kind: linux
+      image: alpine:3.19
+      cmd: "sleep infinity"
+      exec:
+        - ip addr add 192.168.20.10/24 dev eth1
+        - ip route replace default via 192.168.20.1
+
+  links:
+    # --- Enlaces Leaf01 hacia Spines ---
+    - endpoints: ["leaf01:eth1", "spine01:eth1"]
+    - endpoints: ["leaf01:eth2", "spine02:eth1"]
+    # --- Enlaces Leaf02 hacia Spines ---
+    - endpoints: ["leaf02:eth1", "spine01:eth2"]
+    - endpoints: ["leaf02:eth2", "spine02:eth2"]
+    # --- Enlace de Interconexión Inter-Spine ---
+    - endpoints: ["spine01:eth3", "spine02:eth3"]
+    # --- Enlaces hacia Clientes ---
+    - endpoints: ["client-a:eth1", "leaf01:eth3"]
+    - endpoints: ["client-b:eth1", "leaf02:eth3"]
